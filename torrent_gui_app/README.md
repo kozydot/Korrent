@@ -19,7 +19,7 @@ A simple desktop GUI application built with Python and PyQt6 to search for torre
 *   PyQt6
 *   py1337x
 *   pyperclip
-*   webbrowser (usually included with Python)
+*   webbrowser
 
 ## Installation
 
@@ -29,8 +29,6 @@ A simple desktop GUI application built with Python and PyQt6 to search for torre
     ```bash
     pip install -r requirements.txt
     ```
-    *(Note: On Linux, you might need to install `xclip` or `xsel` for clipboard functionality: `sudo apt-get install xclip` or `sudo apt-get install xsel`)*
-
 ## Usage
 
 Run the application from the `torrent_gui_app` directory:
