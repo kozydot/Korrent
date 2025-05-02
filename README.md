@@ -13,6 +13,10 @@ A simple desktop GUI application built with Python and PyQt6 to search for torre
 *   Dark theme interface.
 *   Smooth scrolling in the results list.
 
+## Screenshot
+
+![Application Screenshot](image/image.png)
+
 ## Requirements
 
 *   Python 3.x
