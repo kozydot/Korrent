@@ -11,7 +11,6 @@ A simple desktop GUI application built with Python and PyQt6 to search for torre
 *   Copy magnet links to the clipboard.
 *   Initiate torrent downloads by opening magnet links in the default torrent client.
 *   Dark theme interface.
-*   Smooth scrolling in the results list.
 
 ## Screenshot
 
