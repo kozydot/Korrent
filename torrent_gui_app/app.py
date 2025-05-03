@@ -1,64 +1,64 @@
 import sys
-import os # Added for path manipulation
+import os # for path stuff
 import threading
 import webbrowser
 import pyperclip
 import py1337x
-from py1337x.types import category as py1337x_category, sort as py1337x_sort # lib type constants
+from py1337x.types import category as py1337x_category, sort as py1337x_sort # library type constants
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QTextEdit, QLabel, QStatusBar, QMessageBox, QListWidgetItem,
-    QSizePolicy, QComboBox, QTableWidget, QTableWidgetItem, # table stuff
-    QAbstractItemView, QHeaderView # table options
+    QSizePolicy, QComboBox, QTableWidget, QTableWidgetItem, # for the results table
+    QAbstractItemView, QHeaderView # table display options
 )
 from PyQt6.QtCore import QObject, pyqtSignal, Qt, QThread
-from PyQt6.QtGui import QIcon # import qicon for setting window icon
+from PyQt6.QtGui import QIcon # for the window icon
 
 # --- worker signals ---
-# helps threads talk to the main gui safely
+# helps threads talk safely to the main gui
 class WorkerSignals(QObject):
     search_finished = pyqtSignal(list)
-    details_finished = pyqtSignal(object) # details obj or none if error
-    error = pyqtSignal(str, str) # title, msg
+    details_finished = pyqtSignal(object) # details object, or none if there's an error
+    error = pyqtSignal(str, str) # error title, message
     status_update = pyqtSignal(str)
 
 # --- search worker thread ---
 class SearchWorker(QThread):
-    def __init__(self, query, category=None, sort_by=None, order='desc'): # needs search params
+    def __init__(self, query, category=None, sort_by=None, order='desc'): # needs search parameters
         super().__init__()
         self.query = query
-        self.category = category # save params
+        self.category = category # save parameters
         self.sort_by = sort_by
         self.order = order
         self.signals = WorkerSignals()
 
     def run(self):
         try:
-            # build a string showing search params for status bar
+            # build a string showing search parameters for the status bar
             search_params = f"'{self.query}'"
             if self.category: search_params += f", Cat: {self.category}"
             if self.sort_by: search_params += f", Sort: {self.sort_by} ({self.order})"
             self.signals.status_update.emit(f"Searching for {search_params}...")
 
             torrents = py1337x.Py1337x()
-            # actually run the search with the params
+            # run the search with the parameters
             results = torrents.search(
                 query=self.query,
                 category=self.category,
                 sort_by=self.sort_by,
                 order=self.order
             )
-            # get items list, or empty list if no results
+            # get the list of items, or an empty list if no results
             items = results.items if results and results.items else []
-            self.signals.search_finished.emit(items) # send results back
-            # update status bar based on results
+            self.signals.search_finished.emit(items) # send results back to the main thread
+            # update the status bar based on results
             if not items:
                  self.signals.status_update.emit("No results found.")
             else:
                  self.signals.status_update.emit(f"Found {len(items)} results.")
         except Exception as e:
-            # oops, send error back
+            # oops, send the error back
             self.signals.error.emit("Search Error", f"An error occurred during search:\n{e}")
             self.signals.status_update.emit(f"Search error: {e}")
 
@@ -73,13 +73,13 @@ class DetailsWorker(QThread):
         try:
             self.signals.status_update.emit(f"Fetching details for torrent ID: {self.torrent_id}...")
             torrents = py1337x.Py1337x()
-            info = torrents.info(torrent_id=self.torrent_id) # get details
-            self.signals.details_finished.emit(info) # send details back
+            info = torrents.info(torrent_id=self.torrent_id) # get the torrent details
+            self.signals.details_finished.emit(info) # send details back to the main thread
             self.signals.status_update.emit("Details loaded.")
         except Exception as e:
-            # oops, send error back
+            # oops, send the error back
             self.signals.error.emit("Details Error", f"Error fetching details:\n{e}")
-            self.signals.details_finished.emit(None) # signal done even if error
+            self.signals.details_finished.emit(None) # signal completion, even if there was an error
             self.signals.status_update.emit(f"Details error: {e}")
 
 
@@ -87,14 +87,14 @@ class DetailsWorker(QThread):
 class TorrentApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.current_torrent_info = None # store selected torrent info
-        self.search_worker = None # keep track of worker threads
+        self.current_torrent_info = None # store the currently selected torrent's info
+        self.search_worker = None # keep track of the worker threads
         self.details_worker = None
         self.initUI()
 
-    # --- UI Initialization ---
+    # --- ui initialization ---
     def initUI(self):
-        """Initializes the main UI components and layout."""
+        """initializes the main ui components and layout."""
         self._setup_layouts()
         self._create_search_widgets()
         self._create_options_widgets()
@@ -226,19 +226,19 @@ class TorrentApp(QWidget):
         self.setWindowTitle('Korrent1337x')
         self.setGeometry(100, 100, 850, 650)
 
-        # Construct path relative to this script file
+        # construct path relative to this script file
         script_dir = os.path.dirname(__file__)
         icon_filename = '20250501_0135_Yellow K Symbol_remix_01jt49z4whfamvprer8vckc5mw.png'
-        # Go one level up from script_dir (torrent_gui_app) to the project root
+        # go one level up from script_dir (torrent_gui_app) to the project root
         icon_path = os.path.join(script_dir, '..', icon_filename)
 
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         else:
-            print(f"Warning: Icon file not found at {icon_path}") # Add warning
+            print(f"Warning: Icon file not found at {icon_path}") # add a warning if icon not found
 
     def _load_stylesheet(self):
-        """Loads the stylesheet from style.qss."""
+        """loads the stylesheet from style.qss."""
         script_dir = os.path.dirname(__file__)
         stylesheet_path = os.path.join(script_dir, 'style.qss')
         try:
@@ -250,19 +250,19 @@ class TorrentApp(QWidget):
             print(f"Error loading stylesheet: {e}")
 
 
-    # --- Helper Methods ---
+    # --- helper methods ---
     def _set_action_buttons_enabled(self, enabled: bool):
-        """Enables or disables the copy and download buttons."""
+        """enables or disables the copy and download buttons."""
         self.copy_magnet_button.setEnabled(enabled)
         self.download_button.setEnabled(enabled)
 
     def _stop_worker(self, worker: QThread):
-        """Safely stops a running QThread worker."""
+        """safely stops a running qthread worker."""
         if worker and worker.isRunning():
             worker.quit()
-            worker.wait() # Wait for thread to finish cleanly
+            worker.wait() # wait for the thread to finish cleanly
 
-    # --- Slots (Event Handlers) ---
+    # --- slots (event handlers) ---
     def start_search(self):
         query = self.search_entry.text().strip()
         if not query:
@@ -271,98 +271,98 @@ class TorrentApp(QWidget):
 
         self.results_table.setRowCount(0)
         self.details_text.clear()
-        self._set_action_buttons_enabled(False) # Use helper
+        self._set_action_buttons_enabled(False) # use helper method
         self.current_torrent_info = None
 
-        # Stop previous search worker
-        self._stop_worker(self.search_worker) # Use helper
+        # stop the previous search worker if it's running
+        self._stop_worker(self.search_worker) # use helper method
 
-        # Get selected options from dropdowns
+        # get selected options from the dropdowns
         selected_category = self.category_combo.currentData()
         selected_sort = self.sort_combo.currentData()
         selected_order = self.order_combo.currentData()
 
-        # start search worker thread w/ options
+        # start the search worker thread with options
         self.search_worker = SearchWorker(
             query=query,
             category=selected_category,
             sort_by=selected_sort,
             order=selected_order
         )
-        # connect signals from worker to slots in this class
+        # connect signals from the worker to slots in this class
         self.search_worker.signals.search_finished.connect(self.update_search_results)
         self.search_worker.signals.error.connect(self.show_error)
         self.search_worker.signals.status_update.connect(self.update_status)
-        self.search_worker.start() # go!
+        self.search_worker.start() # start the thread!
 
     def update_search_results(self, items):
-        self.results_table.setRowCount(0) # clear table first
+        self.results_table.setRowCount(0) # clear the table first
         if not items:
-            # maybe show msg in table? nah, status bar is fine
+            # status bar message is sufficient for 'no results'
             self.update_status("No results found.")
             return
 
-        self.results_table.setRowCount(len(items)) # make enough rows
+        self.results_table.setRowCount(len(items)) # make enough rows for the results
 
-        # fill the table
+        # fill the table with results
         for row, item in enumerate(items):
             name = getattr(item, 'name', 'N/A')
             torrent_id = getattr(item, 'torrent_id', None)
 
-            # make table cells (items)
+            # make table cells (qtablewidgetitems)
             name_item = QTableWidgetItem(name)
-            name_item.setToolTip(name) # show full name on hover
-            id_item = QTableWidgetItem(torrent_id) # store id in hidden cell
+            name_item.setToolTip(name) # show the full name on hover
+            id_item = QTableWidgetItem(torrent_id) # store the torrent id in a hidden cell
 
-            # put cells in row
+            # put the cells into the current row
             self.results_table.setItem(row, 0, name_item)
-            self.results_table.setItem(row, 1, id_item) # hidden id cell
+            self.results_table.setItem(row, 1, id_item) # the hidden id cell
 
-        # resize cols? maybe not needed with stretch
+        # (column resizing handled by stretch mode)
 
     def start_display_details(self):
-        selected_row = self.results_table.currentRow() # find selected row index
-        if selected_row < 0: # nothing selected
+        selected_row = self.results_table.currentRow() # find the selected row index
+        if selected_row < 0: # no row selected
             return
 
         # get the hidden id item from the selected row
-        id_item = self.results_table.item(selected_row, 1) # id is col 1 now
+        id_item = self.results_table.item(selected_row, 1) # id is in column 1 now
         if not id_item:
              self.show_error("Error", "Could not retrieve torrent ID from selected row.")
              return
 
-        torrent_id = id_item.text() # get id string
+        torrent_id = id_item.text() # get the id string
 
-        # Check if id is valid before proceeding
-        if not torrent_id: # Simplified check
+        # check if the id is valid before proceeding
+        if not torrent_id: # simplified check for non-empty id
             self.details_text.setHtml("<i>No details available.</i>")
-            self._set_action_buttons_enabled(False) # Use helper
+            self._set_action_buttons_enabled(False) # use helper method
             self.current_torrent_info = None
             return
 
-        # Show loading message & disable buttons
+        # show a loading message & disable buttons
         self.details_text.setHtml("<i>Loading details...</i>")
-        self._set_action_buttons_enabled(False) # Use helper
+        self._set_action_buttons_enabled(False) # use helper method
         self.current_torrent_info = None
 
-        # Stop previous details worker
-        self._stop_worker(self.details_worker) # Use helper
+        # stop the previous details worker if it's running
+        self._stop_worker(self.details_worker) # use helper method
 
-        # Start details worker thread
+        # start the details worker thread
         self.details_worker = DetailsWorker(torrent_id)
         self.details_worker.signals.details_finished.connect(self.update_details_display)
         self.details_worker.signals.error.connect(self.show_error)
         self.details_worker.signals.status_update.connect(self.update_status)
-        self.details_worker.start() # go!
+        self.details_worker.start() # start the thread!
 
     def update_details_display(self, info):
-        self.current_torrent_info = info # store the fetched info
+        self.current_torrent_info = info # store the fetched info object
         if info is None:
             self.details_text.setHtml("<b>Error fetching details.</b>")
-            self._set_action_buttons_enabled(False) # Use helper
+            self._set_action_buttons_enabled(False) # use helper method
             return
 
-        # Use getattr for safety, format with html
+        # use getattr for safety, format details with html
         details_html = f"""
             <p><b>Name:</b> {getattr(info, 'name', 'N/A')}</p>
             <p><b>Category:</b> {getattr(info, 'category', 'N/A')}&nbsp;&nbsp;&nbsp;
@@ -380,11 +380,11 @@ class TorrentApp(QWidget):
             <p><b>Infohash:</b> {getattr(info, 'infohash', 'N/A')}</p>
             <p><b>Torrent Link:</b> {getattr(info, 'torrent_link', 'N/A')}</p>
         """
-        self.details_text.setHtml(details_html) # display html
+        self.details_text.setHtml(details_html) # display the formatted html
 
-        # enable buttons only if magnet link exists
+        # enable action buttons only if a magnet link exists
         has_magnet = bool(getattr(info, 'magnet_link', None))
-        self._set_action_buttons_enabled(has_magnet) # Use helper
+        self._set_action_buttons_enabled(has_magnet) # use helper method
 
 
     def copy_magnet(self):
@@ -392,13 +392,13 @@ class TorrentApp(QWidget):
             magnet = getattr(self.current_torrent_info, 'magnet_link', None)
             if magnet:
                 try:
-                    pyperclip.copy(magnet) # copy to clipboard
+                    pyperclip.copy(magnet) # copy the magnet link to the clipboard
                     self.update_status("Magnet link copied to clipboard!")
                 except pyperclip.PyperclipException:
-                     # specific error for clipboard libs
+                     # specific error for clipboard libraries
                      self.show_error("Clipboard Error", "Could not copy to clipboard. Install 'xclip' or 'xsel' on Linux, or check permissions.")
                 except Exception as e:
-                    # general error
+                    # general error during copy
                     self.show_error("Error", f"An unexpected error occurred during copy: {e}")
             else:
                 self.show_error("Copy Error", "No magnet link available in details.")
@@ -406,12 +406,12 @@ class TorrentApp(QWidget):
              self.show_error("Copy Error", "No torrent details loaded.")
 
 
-    def download_torrent_via_magnet(self): # func name changed earlier
+    def download_torrent_via_magnet(self):
          if self.current_torrent_info:
-            magnet_link = getattr(self.current_torrent_info, 'magnet_link', None) # get magnet
+            magnet_link = getattr(self.current_torrent_info, 'magnet_link', None) # get the magnet link
             if magnet_link:
                 try:
-                    # open magnet link (should start torrent client)
+                    # open the magnet link (this should launch the default torrent client)
                     webbrowser.open(magnet_link)
                     self.update_status("Opening magnet link in default torrent client...")
                 except Exception as e:
@@ -429,15 +429,15 @@ class TorrentApp(QWidget):
         QMessageBox.critical(self, title, message)
 
     def closeEvent(self, event):
-        """Stops worker threads before closing the application."""
-        self._stop_worker(self.search_worker) # Use helper
-        self._stop_worker(self.details_worker) # Use helper
+        """stops worker threads before closing the application."""
+        self._stop_worker(self.search_worker) # use helper method
+        self._stop_worker(self.details_worker) # use helper method
         event.accept()
 
 
-# --- Run Application ---
+# --- run application ---
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    # Stylesheet is now loaded within TorrentApp._load_stylesheet()
+    # stylesheet is now loaded within torrentapp._load_stylesheet()
     ex = TorrentApp()
     sys.exit(app.exec())
