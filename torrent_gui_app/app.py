@@ -1,4 +1,5 @@
 import sys
+import os # Added for path manipulation
 import threading
 import webbrowser
 import pyperclip
@@ -12,6 +13,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView, QHeaderView # table options
 )
 from PyQt6.QtCore import QObject, pyqtSignal, Qt, QThread
+from PyQt6.QtGui import QIcon # import qicon for setting window icon
 
 # --- worker signals ---
 # helps threads talk to the main gui safely
@@ -90,41 +92,51 @@ class TorrentApp(QWidget):
         self.details_worker = None
         self.initUI()
 
+    # --- UI Initialization ---
     def initUI(self):
-        self.setWindowTitle('Korrent1337x') # new app name
-        self.setGeometry(100, 100, 850, 650) # window size/pos
+        """Initializes the main UI components and layout."""
+        self._setup_layouts()
+        self._create_search_widgets()
+        self._create_options_widgets()
+        self._create_results_table()
+        self._create_details_area()
+        self._create_action_buttons()
+        self._create_status_bar()
+        self._assemble_main_layout()
+        self._set_window_properties()
+        self._load_stylesheet()
+        self.show()
 
-        # --- layouts ---
-        main_layout = QVBoxLayout(self)
-        top_layout = QHBoxLayout()
-        options_layout = QHBoxLayout() # sort/filter options here
-        middle_layout = QHBoxLayout()
-        bottom_layout = QHBoxLayout() # buttons here
+    def _setup_layouts(self):
+        """Creates the main layout containers."""
+        self.main_layout = QVBoxLayout(self)
+        self.top_layout = QHBoxLayout()
+        self.options_layout = QHBoxLayout()
+        self.middle_layout = QHBoxLayout()
+        self.bottom_layout = QHBoxLayout()
 
-        # --- top widgets (search) ---
+    def _create_search_widgets(self):
+        """Creates the search input and button."""
         search_label = QLabel("Search:")
         self.search_entry = QLineEdit()
         self.search_entry.setPlaceholderText("Enter search query...")
-        self.search_entry.returnPressed.connect(self.start_search) # allow enter key search
+        self.search_entry.returnPressed.connect(self.start_search)
         search_button = QPushButton("Search")
         search_button.clicked.connect(self.start_search)
 
-        top_layout.addWidget(search_label)
-        top_layout.addWidget(self.search_entry)
-        top_layout.addWidget(search_button)
+        self.top_layout.addWidget(search_label)
+        self.top_layout.addWidget(self.search_entry)
+        self.top_layout.addWidget(search_button)
 
-        # --- options widgets (sort/filter) ---
-        # category dropdown
+    def _create_options_widgets(self):
+        """Creates the category, sort, and order dropdowns."""
         category_label = QLabel("Category:")
         self.category_combo = QComboBox()
-        self.category_combo.addItem("Any", None) # default is no filter
-        # fill dropdown from lib constants
+        self.category_combo.addItem("Any", None)
         for cat_name, cat_value in vars(py1337x_category).items():
-             if not cat_name.startswith('_') and isinstance(cat_value, str):
-                 # make name readable, store actual value
-                 self.category_combo.addItem(cat_name.replace('_', ' ').title(), cat_value)
+            if not cat_name.startswith('_') and isinstance(cat_value, str):
+                self.category_combo.addItem(cat_name.replace('_', ' ').title(), cat_value)
 
-        # sort by dropdown
         sort_label = QLabel("Sort By:")
         self.sort_combo = QComboBox()
         self.sort_combo.addItem("Default", None)
@@ -133,102 +145,139 @@ class TorrentApp(QWidget):
         self.sort_combo.addItem("Seeders", py1337x_sort.SEEDERS)
         self.sort_combo.addItem("Leechers", py1337x_sort.LEECHERS)
 
-        # order dropdown
         order_label = QLabel("Order:")
         self.order_combo = QComboBox()
         self.order_combo.addItem("Desc", "desc")
         self.order_combo.addItem("Asc", "asc")
 
-        options_layout.addWidget(category_label)
-        options_layout.addWidget(self.category_combo)
-        options_layout.addSpacing(15) # little gap
-        options_layout.addWidget(sort_label)
-        options_layout.addWidget(self.sort_combo)
-        options_layout.addSpacing(15)
-        options_layout.addWidget(order_label)
-        options_layout.addWidget(self.order_combo)
-        options_layout.addStretch(1) # push options left
+        self.options_layout.addWidget(category_label)
+        self.options_layout.addWidget(self.category_combo)
+        self.options_layout.addSpacing(15)
+        self.options_layout.addWidget(sort_label)
+        self.options_layout.addWidget(self.sort_combo)
+        self.options_layout.addSpacing(15)
+        self.options_layout.addWidget(order_label)
+        self.options_layout.addWidget(self.order_combo)
+        self.options_layout.addStretch(1)
 
-        # --- middle widgets (results & details) ---
-        results_group_layout = QVBoxLayout()
-        details_group_layout = QVBoxLayout()
-
+    def _create_results_table(self):
+        """Creates and configures the results table."""
+        self.results_group_layout = QVBoxLayout()
         results_label = QLabel("Results:")
-        self.results_table = QTableWidget() # using a table now
-        self.results_table.setColumnCount(2) # name, id (hidden)
+        self.results_table = QTableWidget()
+        self.results_table.setColumnCount(2)
         self.results_table.setHorizontalHeaderLabels(["Name", "ID"])
-        self.results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows) # select whole row
-        self.results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers) # cant edit table cells
-        self.results_table.verticalHeader().setVisible(False) # hide row numbers
-        self.results_table.itemSelectionChanged.connect(self.start_display_details) # run func on selection change
-        self.results_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel) # smooth scroll!
+        self.results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.results_table.verticalHeader().setVisible(False)
+        self.results_table.itemSelectionChanged.connect(self.start_display_details)
+        self.results_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.results_table.setColumnHidden(1, True)
 
-        # hide the id column
-        self.results_table.setColumnHidden(1, True) # id col is index 1
-
-        # setup table header
         header = self.results_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch) # name col takes available space
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
 
-        results_group_layout.addWidget(results_label)
-        results_group_layout.addWidget(self.results_table) # add table to its layout
+        self.results_group_layout.addWidget(results_label)
+        self.results_group_layout.addWidget(self.results_table)
 
+    def _create_details_area(self):
+        """Creates the details text area."""
+        self.details_group_layout = QVBoxLayout()
         details_label = QLabel("Details:")
         self.details_text = QTextEdit()
         self.details_text.setReadOnly(True)
 
-        details_group_layout.addWidget(details_label)
-        details_group_layout.addWidget(self.details_text)
+        self.details_group_layout.addWidget(details_label)
+        self.details_group_layout.addWidget(self.details_text)
 
-        middle_layout.addLayout(results_group_layout, 1) # results take 1/3 space
-        middle_layout.addLayout(details_group_layout, 2) # details take 2/3 space
-
-        # --- bottom widgets (buttons) ---
+    def _create_action_buttons(self):
+        """Creates the copy magnet and download buttons."""
         self.copy_magnet_button = QPushButton("Copy Magnet Link")
         self.copy_magnet_button.setEnabled(False)
         self.copy_magnet_button.clicked.connect(self.copy_magnet)
 
-        self.download_button = QPushButton("Download (Magnet)") # button name changed earlier
+        self.download_button = QPushButton("Download (Magnet)")
         self.download_button.setEnabled(False)
-        self.download_button.clicked.connect(self.download_torrent_via_magnet) # slot name changed earlier
+        self.download_button.clicked.connect(self.download_torrent_via_magnet)
 
-        bottom_layout.addWidget(self.copy_magnet_button)
-        bottom_layout.addWidget(self.download_button) # use correct button var
-        bottom_layout.addStretch(1) # push buttons left
+        self.bottom_layout.addWidget(self.copy_magnet_button)
+        self.bottom_layout.addWidget(self.download_button)
+        self.bottom_layout.addStretch(1)
 
-        # --- status bar ---
+    def _create_status_bar(self):
+        """Creates the status bar."""
         self.status_bar = QStatusBar()
         self.status_bar.showMessage("Enter search query and press Search.")
 
-        # --- assemble main layout ---
-        main_layout.addLayout(top_layout)
-        main_layout.addLayout(options_layout) # add options row
-        main_layout.addLayout(middle_layout)
-        main_layout.addLayout(bottom_layout)
-        main_layout.addWidget(self.status_bar)
+    def _assemble_main_layout(self):
+        """Adds all sub-layouts and widgets to the main layout."""
+        self.middle_layout.addLayout(self.results_group_layout, 1)
+        self.middle_layout.addLayout(self.details_group_layout, 2)
 
-        self.setLayout(main_layout)
-        self.show()
+        self.main_layout.addLayout(self.top_layout)
+        self.main_layout.addLayout(self.options_layout)
+        self.main_layout.addLayout(self.middle_layout)
+        self.main_layout.addLayout(self.bottom_layout)
+        self.main_layout.addWidget(self.status_bar)
+        self.setLayout(self.main_layout)
 
-    # --- slots (event handlers) ---
+    def _set_window_properties(self):
+        """Sets window title, geometry, and icon."""
+        self.setWindowTitle('Korrent1337x')
+        self.setGeometry(100, 100, 850, 650)
+
+        # Construct path relative to this script file
+        script_dir = os.path.dirname(__file__)
+        icon_filename = '20250501_0135_Yellow K Symbol_remix_01jt49z4whfamvprer8vckc5mw.png'
+        # Go one level up from script_dir (torrent_gui_app) to the project root
+        icon_path = os.path.join(script_dir, '..', icon_filename)
+
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            print(f"Warning: Icon file not found at {icon_path}") # Add warning
+
+    def _load_stylesheet(self):
+        """Loads the stylesheet from style.qss."""
+        script_dir = os.path.dirname(__file__)
+        stylesheet_path = os.path.join(script_dir, 'style.qss')
+        try:
+            with open(stylesheet_path, "r") as f:
+                self.setStyleSheet(f.read())
+        except FileNotFoundError:
+            print(f"Warning: Stylesheet file not found at {stylesheet_path}")
+        except Exception as e:
+            print(f"Error loading stylesheet: {e}")
+
+
+    # --- Helper Methods ---
+    def _set_action_buttons_enabled(self, enabled: bool):
+        """Enables or disables the copy and download buttons."""
+        self.copy_magnet_button.setEnabled(enabled)
+        self.download_button.setEnabled(enabled)
+
+    def _stop_worker(self, worker: QThread):
+        """Safely stops a running QThread worker."""
+        if worker and worker.isRunning():
+            worker.quit()
+            worker.wait() # Wait for thread to finish cleanly
+
+    # --- Slots (Event Handlers) ---
     def start_search(self):
         query = self.search_entry.text().strip()
         if not query:
             self.show_error("Input Error", "Please enter a search query.")
             return
 
-        self.results_table.setRowCount(0) # clear table
+        self.results_table.setRowCount(0)
         self.details_text.clear()
-        self.copy_magnet_button.setEnabled(False)
-        self.download_button.setEnabled(False) # use correct button var
+        self._set_action_buttons_enabled(False) # Use helper
         self.current_torrent_info = None
 
-        # stop previous search if still running
-        if self.search_worker and self.search_worker.isRunning():
-             self.search_worker.quit() # ask nicely
-             self.search_worker.wait() # wait for it
+        # Stop previous search worker
+        self._stop_worker(self.search_worker) # Use helper
 
-        # get selected options from dropdowns
+        # Get selected options from dropdowns
         selected_category = self.category_combo.currentData()
         selected_sort = self.sort_combo.currentData()
         selected_order = self.order_combo.currentData()
@@ -284,26 +333,22 @@ class TorrentApp(QWidget):
 
         torrent_id = id_item.text() # get id string
 
-        # check if id is valid before proceeding
-        if not torrent_id or torrent_id == "No results found.":
-            self.details_text.setHtml("<i>No details available.</i>") # use html
-            self.copy_magnet_button.setEnabled(False)
-            self.download_button.setEnabled(False) # use correct button var
+        # Check if id is valid before proceeding
+        if not torrent_id: # Simplified check
+            self.details_text.setHtml("<i>No details available.</i>")
+            self._set_action_buttons_enabled(False) # Use helper
             self.current_torrent_info = None
             return
 
-        # show loading message & disable buttons
-        self.details_text.setHtml("<i>Loading details...</i>") # use html
-        self.copy_magnet_button.setEnabled(False)
-        self.download_button.setEnabled(False) # use correct button var
+        # Show loading message & disable buttons
+        self.details_text.setHtml("<i>Loading details...</i>")
+        self._set_action_buttons_enabled(False) # Use helper
         self.current_torrent_info = None
 
-        # stop previous details worker if running
-        if self.details_worker and self.details_worker.isRunning():
-             self.details_worker.quit()
-             self.details_worker.wait()
+        # Stop previous details worker
+        self._stop_worker(self.details_worker) # Use helper
 
-        # start details worker thread
+        # Start details worker thread
         self.details_worker = DetailsWorker(torrent_id)
         self.details_worker.signals.details_finished.connect(self.update_details_display)
         self.details_worker.signals.error.connect(self.show_error)
@@ -312,13 +357,12 @@ class TorrentApp(QWidget):
 
     def update_details_display(self, info):
         self.current_torrent_info = info # store the fetched info
-        if info is None: # means an error happened
-            self.details_text.setHtml("<b>Error fetching details.</b>") # use html
-            self.copy_magnet_button.setEnabled(False)
-            self.download_button.setEnabled(False) # use correct button var
+        if info is None:
+            self.details_text.setHtml("<b>Error fetching details.</b>")
+            self._set_action_buttons_enabled(False) # Use helper
             return
 
-        # use getattr for safety, format with html
+        # Use getattr for safety, format with html
         details_html = f"""
             <p><b>Name:</b> {getattr(info, 'name', 'N/A')}</p>
             <p><b>Category:</b> {getattr(info, 'category', 'N/A')}&nbsp;&nbsp;&nbsp;
@@ -340,8 +384,7 @@ class TorrentApp(QWidget):
 
         # enable buttons only if magnet link exists
         has_magnet = bool(getattr(info, 'magnet_link', None))
-        self.copy_magnet_button.setEnabled(has_magnet)
-        self.download_button.setEnabled(has_magnet)
+        self._set_action_buttons_enabled(has_magnet) # Use helper
 
 
     def copy_magnet(self):
@@ -386,193 +429,15 @@ class TorrentApp(QWidget):
         QMessageBox.critical(self, title, message)
 
     def closeEvent(self, event):
-        # stop threads nicely when closing window
-        if self.search_worker and self.search_worker.isRunning():
-            self.search_worker.quit()
-            self.search_worker.wait()
-        if self.details_worker and self.details_worker.isRunning():
-            self.details_worker.quit()
-            self.details_worker.wait()
-        event.accept() # allow window to close
+        """Stops worker threads before closing the application."""
+        self._stop_worker(self.search_worker) # Use helper
+        self._stop_worker(self.details_worker) # Use helper
+        event.accept()
 
 
-# --- run application ---
+# --- Run Application ---
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-
-    # --- dark theme stylesheet ---
-    dark_stylesheet = """
-        QWidget {
-            background-color: #2b2b2b;
-            color: #f0f0f0;
-            font-size: 10pt;
-        }
-        QLabel {
-            color: #cccccc; /* lighter grey */
-        }
-        QLineEdit {
-            background-color: #3c3f41;
-            color: #f0f0f0;
-            border: 1px solid #555555;
-            padding: 5px;
-            border-radius: 3px;
-        }
-        QPushButton {
-            background-color: #555555;
-            color: #f0f0f0;
-            border: 1px solid #666666;
-            padding: 5px 10px;
-            border-radius: 3px;
-            min-width: 80px; /* min button width */
-        }
-        QPushButton:hover {
-            background-color: #666666;
-            border: 1px solid #777777;
-        }
-        QPushButton:pressed {
-            background-color: #444444;
-        }
-        QPushButton:disabled {
-            background-color: #404040;
-            color: #888888;
-            border: 1px solid #555555;
-        }
-        /* QListWidget styles removed as it's no longer used */
-        QTextEdit {
-            background-color: #3c3f41;
-            color: #f0f0f0;
-            border: 1px solid #555555;
-            border-radius: 3px;
-        }
-        QStatusBar {
-            background-color: #2b2b2b;
-            color: #cccccc;
-        }
-        QStatusBar::item {
-            border: none; /* no status bar borders */
-        }
-        QMessageBox {
-             background-color: #3c3f41; /* style msg boxes */
-        }
-        QMessageBox QLabel {
-             color: #f0f0f0;
-        }
-        QMessageBox QPushButton {
-             min-width: 60px; /* smaller msg box buttons */
-        }
-        QComboBox {
-            background-color: #3c3f41;
-            border: 1px solid #555555;
-            padding: 3px 5px;
-            border-radius: 3px;
-            min-width: 6em; /* combo width */
-        }
-        QComboBox:hover {
-            border: 1px solid #777777;
-        }
-        /* dropdown list style */
-        QComboBox QAbstractItemView {
-            background-color: #3c3f41;
-            color: #f0f0f0;
-            border: 1px solid #555555;
-            selection-background-color: #0078d7; /* selection color */
-            selection-color: #ffffff;
-            outline: 0px; /* no focus outline */
-        }
-        /* dropdown arrow style */
-        QComboBox::drop-down {
-            subcontrol-origin: padding;
-            subcontrol-position: top right;
-            width: 15px;
-            border-left-width: 1px;
-            border-left-color: #555555;
-            border-left-style: solid;
-            border-top-right-radius: 3px;
-            border-bottom-right-radius: 3px;
-            background-color: #555555;
-        }
-        QComboBox::down-arrow {
-            /* image: url(placeholder.png); */ /* needs real icon */
-            width: 10px; /* arrow size */
-            height: 10px;
-        }
-        QComboBox::down-arrow:on { /* shift arrow when open */
-            top: 1px;
-            left: 1px;
-        }
-        /* scrollbar style */
-        QScrollBar:vertical {
-            border: none;
-            background: #2b2b2b; /* match bg */
-            width: 10px; /* scrollbar width */
-            margin: 0px 0px 0px 0px;
-        }
-        QScrollBar::handle:vertical {
-            background: #555555; /* handle color */
-            min-height: 20px;
-            border-radius: 5px; /* round corners */
-        }
-        QScrollBar::handle:vertical:hover {
-            background: #666666; /* handle hover */
-        }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-            border: none;
-            background: none;
-            height: 0px; /* hide arrows */
-            subcontrol-position: top;
-            subcontrol-origin: margin;
-        }
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-            background: none; /* track bg */
-        }
-
-        QScrollBar:horizontal {
-            border: none;
-            background: #2b2b2b;
-            height: 10px;
-            margin: 0px 0px 0px 0px;
-        }
-        QScrollBar::handle:horizontal {
-            background: #555555;
-            min-width: 20px;
-            border-radius: 5px;
-        }
-         QScrollBar::handle:horizontal:hover {
-            background: #666666;
-        }
-        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-            border: none;
-            background: none;
-            width: 0px; /* hide arrows */
-        }
-        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-            background: none;
-        }
-        /* table header style */
-        QHeaderView::section {
-           background-color: #3c3f41;
-           color: #cccccc;
-           padding: 4px;
-           border: 1px solid #555555;
-           border-bottom: none; /* avoid double border */
-        }
-        QTableWidget { /* table style */
-           background-color: #3c3f41;
-           border: 1px solid #555555;
-           border-radius: 3px;
-           gridline-color: #555555; /* grid line color */
-        }
-        QTableWidget::item {
-            padding: 3px;
-            color: #f0f0f0;
-        }
-        QTableWidget::item:selected {
-            background-color: #0078d7;
-            color: #ffffff;
-        }
-
-    """
-    app.setStyleSheet(dark_stylesheet)
-
+    # Stylesheet is now loaded within TorrentApp._load_stylesheet()
     ex = TorrentApp()
     sys.exit(app.exec())
