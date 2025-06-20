@@ -23,7 +23,7 @@ MANIFEST
 
 # PyInstaller
 *.manifest
-*.spec
+# *.spec  # commented out to allow korrent.spec
 build/
 dist/
 
