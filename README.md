@@ -1,4 +1,4 @@
-# Korrent1337x
+# Korrent
 
 A simple desktop GUI application built with Python and PyQt6 to search for torrents on 1337x using the `py1337x` library.
 
