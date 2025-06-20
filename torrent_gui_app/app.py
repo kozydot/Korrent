@@ -4,440 +4,539 @@ import threading
 import webbrowser
 import pyperclip
 import py1337x
+import json
+from typing import Optional
 from py1337x.types import category as py1337x_category, sort as py1337x_sort # library type constants
+from custom_1337x import Custom1337x, ALTERNATIVE_DOMAINS  # Import our custom module with domains
+from widgets import SearchControls, DetailsArea, ResultsTab, FavoritesTab, ActionButtons
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QTextEdit, QLabel, QStatusBar, QMessageBox, QListWidgetItem,
     QSizePolicy, QComboBox, QTableWidget, QTableWidgetItem, # for the results table
-    QAbstractItemView, QHeaderView # table display options
+    QAbstractItemView, QHeaderView, QCompleter, QTabWidget, QGroupBox, QFileDialog # table display options
 )
-from PyQt6.QtCore import QObject, pyqtSignal, Qt, QThread
-from PyQt6.QtGui import QIcon # for the window icon
+from PyQt6.QtCore import QObject, pyqtSignal, Qt, QThread, QStringListModel
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush, QPen, QPolygon, QFont # for the window icon
 
 # --- worker signals ---
-# helps threads talk safely to the main gui
+# helps the main thread communicate with the worker threads
 class WorkerSignals(QObject):
     search_finished = pyqtSignal(list)
     details_finished = pyqtSignal(object) # details object, or none if there's an error
     error = pyqtSignal(str, str) # error title, message
     status_update = pyqtSignal(str)
 
-# --- search worker thread ---
+# --- worker threads ---
 class SearchWorker(QThread):
-    def __init__(self, query, category=None, sort_by=None, order='desc'): # needs search parameters
+    """worker thread for running searches without freezing the gui."""
+    def __init__(self, query, category=None, sort_by=None, order='desc', domain=None): # needs search parameters
         super().__init__()
         self.query = query
-        self.category = category # save parameters
+        self.category = category
         self.sort_by = sort_by
         self.order = order
+        self.domain = domain
         self.signals = WorkerSignals()
 
     def run(self):
         try:
-            # build a string showing search parameters for the status bar
-            search_params = f"'{self.query}'"
-            if self.category: search_params += f", Cat: {self.category}"
-            if self.sort_by: search_params += f", Sort: {self.sort_by} ({self.order})"
-            self.signals.status_update.emit(f"Searching for {search_params}...")
-
-            torrents = py1337x.Py1337x()
-            # run the search with the parameters
-            results = torrents.search(
-                query=self.query,
-                category=self.category,
-                sort_by=self.sort_by,
-                order=self.order
-            )
-            # get the list of items, or an empty list if no results
-            items = results.items if results and results.items else []
-            self.signals.search_finished.emit(items) # send results back to the main thread
-            # update the status bar based on results
+            self.signals.status_update.emit(f"Searching for '{self.query}'...")
+            
+            # Use our custom 1337x class with domain rotation
+            custom_1337x = Custom1337x(base_url=self.domain or "")
+            
+            # get the search results from the custom class
+            results = custom_1337x.search(self.query, category=self.category, sort_by=self.sort_by, order=self.order)
+            
+            # We are using our custom search method, which returns a list of torrent items
+            # These are dictionaries, not objects
+            items = results.items if results else []
+            
             if not items:
-                 self.signals.status_update.emit("No results found.")
+                self.signals.status_update.emit(f"No results found for '{self.query}'.")
+                self.signals.search_finished.emit([])
             else:
-                 self.signals.status_update.emit(f"Found {len(items)} results.")
+                self.signals.search_finished.emit(items)
+                
         except Exception as e:
-            # oops, send the error back
-            self.signals.error.emit("Search Error", f"An error occurred during search:\n{e}")
-            self.signals.status_update.emit(f"Search error: {e}")
+            self.signals.error.emit("Search Error", str(e))
+            self.signals.search_finished.emit([])
 
-# --- details worker thread ---
+
 class DetailsWorker(QThread):
-    def __init__(self, torrent_id):
+    """worker thread for fetching torrent details without freezing the gui."""
+    def __init__(self, torrent_id, domain=None):
         super().__init__()
         self.torrent_id = torrent_id
+        self.domain = domain
         self.signals = WorkerSignals()
 
     def run(self):
         try:
             self.signals.status_update.emit(f"Fetching details for torrent ID: {self.torrent_id}...")
-            torrents = py1337x.Py1337x()
-            info = torrents.info(torrent_id=self.torrent_id) # get the torrent details
-            self.signals.details_finished.emit(info) # send details back to the main thread
-            self.signals.status_update.emit("Details loaded.")
+            
+            # Use our custom 1337x class with domain rotation
+            custom_1337x = Custom1337x(base_url=self.domain or "")
+            
+            # get the torrent details from the custom class
+            details = custom_1337x.info(torrent_id=self.torrent_id)
+            self.signals.details_finished.emit(details)
+            
         except Exception as e:
-            # oops, send the error back
-            self.signals.error.emit("Details Error", f"Error fetching details:\n{e}")
-            self.signals.details_finished.emit(None) # signal completion, even if there was an error
-            self.signals.status_update.emit(f"Details error: {e}")
+            self.signals.error.emit("Details Error", str(e))
+            self.signals.details_finished.emit(None)
 
 
-# --- main application window ---
+# --- main application ---
 class TorrentApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.current_torrent_info = None # store the currently selected torrent's info
-        self.search_worker = None # keep track of the worker threads
-        self.details_worker = None
+        
+        # --- data ---
+        self.search_history = self.load_search_history()
+        self.favorites = self.load_favorites()
+        self.current_torrent_info = None  # To store the latest fetched details
+        self.search_worker = None # Search worker thread
+        self.details_worker = None # Details worker thread
+        
+        # --- ui initialization ---
         self.initUI()
 
-    # --- ui initialization ---
+    # --- ui initialization ---\
     def initUI(self):
         """initializes the main ui components and layout."""
         self._setup_layouts()
-        self._create_search_widgets()
-        self._create_options_widgets()
-        self._create_results_table()
+        self._create_search_controls()
+        self._create_tabs()
         self._create_details_area()
         self._create_action_buttons()
         self._create_status_bar()
         self._assemble_main_layout()
         self._set_window_properties()
         self._load_stylesheet()
-        self.show()
+
+        self.update_favorites_table() # initial load
+        self.set_action_buttons_enabled(False) # start with action buttons disabled
 
     def _setup_layouts(self):
-        """Creates the main layout containers."""
+        """sets up the main layouts for the application."""
         self.main_layout = QVBoxLayout(self)
-        self.top_layout = QHBoxLayout()
-        self.options_layout = QHBoxLayout()
+        self.top_layout = QVBoxLayout()
         self.middle_layout = QHBoxLayout()
-        self.bottom_layout = QHBoxLayout()
 
-    def _create_search_widgets(self):
-        """Creates the search input and button."""
-        search_label = QLabel("Search:")
-        self.search_entry = QLineEdit()
-        self.search_entry.setPlaceholderText("Enter search query...")
-        self.search_entry.returnPressed.connect(self.start_search)
-        search_button = QPushButton("Search")
-        search_button.clicked.connect(self.start_search)
+    def _create_search_controls(self):
+        """creates the search bar and filter controls."""
+        self.search_controls = SearchControls(self.search_history)
+        self.search_controls.search_button.clicked.connect(self.start_search)
+        self.search_controls.search_entry.returnPressed.connect(self.start_search)
+        
+        clear_history_button = QPushButton("Clear History")
+        clear_history_button.clicked.connect(self.clear_search_history)
+        clear_history_button.setToolTip("Clear search history")
+        self.search_controls.add_widget_to_search_layout(clear_history_button)
 
-        self.top_layout.addWidget(search_label)
-        self.top_layout.addWidget(self.search_entry)
-        self.top_layout.addWidget(search_button)
+        self.top_layout.addWidget(self.search_controls)
 
-    def _create_options_widgets(self):
-        """Creates the category, sort, and order dropdowns."""
-        category_label = QLabel("Category:")
-        self.category_combo = QComboBox()
-        self.category_combo.addItem("Any", None)
-        for cat_name, cat_value in vars(py1337x_category).items():
-            if not cat_name.startswith('_') and isinstance(cat_value, str):
-                self.category_combo.addItem(cat_name.replace('_', ' ').title(), cat_value)
+    def _create_tabs(self):
+        """Creates tab widget with search results and favorites tabs."""
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        self.tab_widget.currentChanged.connect(self.on_tab_changed)
 
-        sort_label = QLabel("Sort By:")
-        self.sort_combo = QComboBox()
-        self.sort_combo.addItem("Default", None)
-        self.sort_combo.addItem("Time", py1337x_sort.TIME)
-        self.sort_combo.addItem("Size", py1337x_sort.SIZE)
-        self.sort_combo.addItem("Seeders", py1337x_sort.SEEDERS)
-        self.sort_combo.addItem("Leechers", py1337x_sort.LEECHERS)
+        # Search results tab
+        self.search_tab = ResultsTab()
+        self.search_tab.results_table.itemSelectionChanged.connect(self.start_display_details)
 
-        order_label = QLabel("Order:")
-        self.order_combo = QComboBox()
-        self.order_combo.addItem("Desc", "desc")
-        self.order_combo.addItem("Asc", "asc")
-
-        self.options_layout.addWidget(category_label)
-        self.options_layout.addWidget(self.category_combo)
-        self.options_layout.addSpacing(15)
-        self.options_layout.addWidget(sort_label)
-        self.options_layout.addWidget(self.sort_combo)
-        self.options_layout.addSpacing(15)
-        self.options_layout.addWidget(order_label)
-        self.options_layout.addWidget(self.order_combo)
-        self.options_layout.addStretch(1)
-
-    def _create_results_table(self):
-        """Creates and configures the results table."""
-        self.results_group_layout = QVBoxLayout()
-        results_label = QLabel("Results:")
-        self.results_table = QTableWidget()
-        self.results_table.setColumnCount(2)
-        self.results_table.setHorizontalHeaderLabels(["Name", "ID"])
-        self.results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.results_table.verticalHeader().setVisible(False)
-        self.results_table.itemSelectionChanged.connect(self.start_display_details)
-        self.results_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.results_table.setColumnHidden(1, True)
-
-        header = self.results_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-
-        self.results_group_layout.addWidget(results_label)
-        self.results_group_layout.addWidget(self.results_table)
-
+        # Favorites tab
+        self.favorites_tab = FavoritesTab()
+        self.favorites_tab.favorites_table.itemSelectionChanged.connect(self.start_display_favorite_details)
+        self.favorites_tab.add_favorite_button.clicked.connect(self.add_to_favorites)
+        self.favorites_tab.remove_favorite_button.clicked.connect(self.remove_from_favorites)        # Add tabs to widget
+        self.tab_widget.addTab(self.search_tab, "Search Results")
+        self.tab_widget.addTab(self.favorites_tab, "Favorites")
+        
     def _create_details_area(self):
-        """Creates the details text area."""
-        self.details_group_layout = QVBoxLayout()
-        details_label = QLabel("Details:")
-        self.details_text = QTextEdit()
-        self.details_text.setReadOnly(True)
-
-        self.details_group_layout.addWidget(details_label)
-        self.details_group_layout.addWidget(self.details_text)
+        """Creates the torrent details display area."""
+        self.details_area = DetailsArea()
 
     def _create_action_buttons(self):
-        """Creates the copy magnet and download buttons."""
-        self.copy_magnet_button = QPushButton("Copy Magnet Link")
-        self.copy_magnet_button.setEnabled(False)
-        self.copy_magnet_button.clicked.connect(self.copy_magnet)
+        """Creates buttons for magnet link and download actions."""
+        self.action_buttons = ActionButtons()
+        self.action_buttons.copy_magnet_button.clicked.connect(self.copy_magnet)
+        self.action_buttons.download_button.clicked.connect(self.download_torrent_via_magnet)
+        self.action_buttons.add_favorite_button.clicked.connect(self.add_to_favorites)
 
-        self.download_button = QPushButton("Download (Magnet)")
-        self.download_button.setEnabled(False)
-        self.download_button.clicked.connect(self.download_torrent_via_magnet)
-
-        self.bottom_layout.addWidget(self.copy_magnet_button)
-        self.bottom_layout.addWidget(self.download_button)
-        self.bottom_layout.addStretch(1)
+        self.set_action_buttons_enabled(False) # disabled by default
 
     def _create_status_bar(self):
         """Creates the status bar."""
         self.status_bar = QStatusBar()
-        self.status_bar.showMessage("Enter search query and press Search.")
-
+        self.status_bar.showMessage("Ready")
+        
     def _assemble_main_layout(self):
-        """Adds all sub-layouts and widgets to the main layout."""
-        self.middle_layout.addLayout(self.results_group_layout, 1)
-        self.middle_layout.addLayout(self.details_group_layout, 2)
+        """Assembles the main layout of the application."""
+        left_pane_widget = QWidget()
+        left_pane_layout = QVBoxLayout(left_pane_widget)
+        left_pane_layout.setContentsMargins(0, 0, 0, 0)
+        left_pane_layout.addWidget(self.details_area)
+        left_pane_layout.addWidget(self.action_buttons)
 
+        self.middle_layout.addWidget(left_pane_widget, 3)
+        self.middle_layout.addWidget(self.tab_widget, 7)
+        
         self.main_layout.addLayout(self.top_layout)
-        self.main_layout.addLayout(self.options_layout)
         self.main_layout.addLayout(self.middle_layout)
-        self.main_layout.addLayout(self.bottom_layout)
         self.main_layout.addWidget(self.status_bar)
-        self.setLayout(self.main_layout)
 
     def _set_window_properties(self):
-        """Sets window title, geometry, and icon."""
-        self.setWindowTitle('Korrent1337x')
-        self.setGeometry(100, 100, 850, 650)
-
-        # construct path relative to this script file
-        script_dir = os.path.dirname(__file__)
-        icon_filename = '20250501_0135_Yellow K Symbol_remix_01jt49z4whfamvprer8vckc5mw.png'
-        # go one level up from script_dir (torrent_gui_app) to the project root
-        icon_path = os.path.join(script_dir, '..', icon_filename)
-
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
-        else:
-            print(f"Warning: Icon file not found at {icon_path}") # add a warning if icon not found
+        """Sets window properties like title, icon, and size."""
+        self.setWindowTitle("Korrent")
+        
+        # set window icon
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        icon_path = os.path.join(script_dir, '..', '..', 'image', 'image.png')
+        self.setWindowIcon(QIcon(icon_path))
+        
+        self.setGeometry(100, 100, 1200, 800)
 
     def _load_stylesheet(self):
-        """loads the stylesheet from style.qss."""
-        script_dir = os.path.dirname(__file__)
+        """Loads the application's stylesheet."""
+        script_dir = os.path.dirname(os.path.realpath(__file__))
         stylesheet_path = os.path.join(script_dir, 'style.qss')
         try:
             with open(stylesheet_path, "r") as f:
                 self.setStyleSheet(f.read())
         except FileNotFoundError:
-            print(f"Warning: Stylesheet file not found at {stylesheet_path}")
-        except Exception as e:
-            print(f"Error loading stylesheet: {e}")
+            print("Stylesheet not found.") # fallback to default styles
+            
+    # --- ui actions and slots ---
+    def set_action_buttons_enabled(self, enabled: bool):
+        """Enable or disable action buttons based on whether a torrent is selected."""
+        self.action_buttons.set_buttons_enabled(enabled)
 
-
-    # --- helper methods ---
-    def _set_action_buttons_enabled(self, enabled: bool):
-        """enables or disables the copy and download buttons."""
-        self.copy_magnet_button.setEnabled(enabled)
-        self.download_button.setEnabled(enabled)
-
-    def _stop_worker(self, worker: QThread):
-        """safely stops a running qthread worker."""
+    def _stop_worker(self, worker: Optional[QThread]):
+        """Safely stops a QThread worker if it is running."""
         if worker and worker.isRunning():
             worker.quit()
-            worker.wait() # wait for the thread to finish cleanly
+            worker.wait()
 
-    # --- slots (event handlers) ---
     def start_search(self):
-        query = self.search_entry.text().strip()
+        """initiates a torrent search."""
+        self._stop_worker(self.search_worker) # stop any previous search
+        
+        params = self.search_controls.get_search_parameters()
+        query = params['query']
+
         if not query:
-            self.show_error("Input Error", "Please enter a search query.")
+            self.show_error("Empty Search", "Please enter a search query.")
             return
 
-        self.results_table.setRowCount(0)
-        self.details_text.clear()
-        self._set_action_buttons_enabled(False) # use helper method
-        self.current_torrent_info = None
-
-        # stop the previous search worker if it's running
-        self._stop_worker(self.search_worker) # use helper method
-
-        # get selected options from the dropdowns
-        selected_category = self.category_combo.currentData()
-        selected_sort = self.sort_combo.currentData()
-        selected_order = self.order_combo.currentData()
-
-        # start the search worker thread with options
+        self.update_search_history(query)
+        self.search_tab.clear_results()
+        self.details_area.clear_details()
+        self.favorites_tab.add_favorite_button.setEnabled(False)
+        self.set_action_buttons_enabled(False)
+        
+        # a new search worker is created with the search parameters
         self.search_worker = SearchWorker(
-            query=query,
-            category=selected_category,
-            sort_by=selected_sort,
-            order=selected_order
+            query,
+            category=params['category'],
+            sort_by=params['sort_by'],
+            order=params['order'],
+            domain=params['domain']
         )
-        # connect signals from the worker to slots in this class
         self.search_worker.signals.search_finished.connect(self.update_search_results)
         self.search_worker.signals.error.connect(self.show_error)
         self.search_worker.signals.status_update.connect(self.update_status)
-        self.search_worker.start() # start the thread!
+        self.search_worker.start()
 
     def update_search_results(self, items):
-        self.results_table.setRowCount(0) # clear the table first
+        """Populates the search results table with data from the search worker."""
+        self.search_tab.populate_results(items)
+
         if not items:
-            # status bar message is sufficient for 'no results'
             self.update_status("No results found.")
-            return
-
-        self.results_table.setRowCount(len(items)) # make enough rows for the results
-
-        # fill the table with results
-        for row, item in enumerate(items):
-            name = getattr(item, 'name', 'N/A')
-            torrent_id = getattr(item, 'torrent_id', None)
-
-            # make table cells (qtablewidgetitems)
-            name_item = QTableWidgetItem(name)
-            name_item.setToolTip(name) # show the full name on hover
-            id_item = QTableWidgetItem(torrent_id) # store the torrent id in a hidden cell
-
-            # put the cells into the current row
-            self.results_table.setItem(row, 0, name_item)
-            self.results_table.setItem(row, 1, id_item) # the hidden id cell
-
-        # (column resizing handled by stretch mode)
-
+        else:
+            self.update_status(f"Found {len(items)} results.")
+        
     def start_display_details(self):
-        selected_row = self.results_table.currentRow() # find the selected row index
-        if selected_row < 0: # no row selected
-            return
-
-        # get the hidden id item from the selected row
-        id_item = self.results_table.item(selected_row, 1) # id is in column 1 now
-        if not id_item:
-             self.show_error("Error", "Could not retrieve torrent ID from selected row.")
-             return
-
-        torrent_id = id_item.text() # get the id string
-
-        # check if the id is valid before proceeding
-        if not torrent_id: # simplified check for non-empty id
-            self.details_text.setHtml("<i>No details available.</i>")
-            self._set_action_buttons_enabled(False) # use helper method
+        """
+        Initiates fetching and displaying details for the selected torrent.
+        Triggered when a row in the results table is selected.
+        """
+        selected_items = self.search_tab.results_table.selectedItems()
+        if not selected_items:
             self.current_torrent_info = None
+            self.favorites_tab.add_favorite_button.setEnabled(False)
+            self.set_action_buttons_enabled(False)
             return
 
-        # show a loading message & disable buttons
-        self.details_text.setHtml("<i>Loading details...</i>")
-        self._set_action_buttons_enabled(False) # use helper method
-        self.current_torrent_info = None
+        selected_row = selected_items[0].row()
+        torrent_id_item = self.search_tab.results_table.item(selected_row, 5) # get ID from hidden column
+        
+        if not torrent_id_item:
+            return
 
-        # stop the previous details worker if it's running
-        self._stop_worker(self.details_worker) # use helper method
+        torrent_id = torrent_id_item.text()
+          # Get the domain used for the search
+        params = self.search_controls.get_search_parameters()
+        domain = params["domain"]
 
-        # start the details worker thread
-        self.details_worker = DetailsWorker(torrent_id)
+        self._stop_worker(self.details_worker) # stop any previous details worker
+        self.details_worker = DetailsWorker(torrent_id, domain)
         self.details_worker.signals.details_finished.connect(self.update_details_display)
         self.details_worker.signals.error.connect(self.show_error)
         self.details_worker.signals.status_update.connect(self.update_status)
-        self.details_worker.start() # start the thread!
+        self.details_worker.start()
 
     def update_details_display(self, info):
-        self.current_torrent_info = info # store the fetched info object
-        if info is None:
-            self.details_text.setHtml("<b>Error fetching details.</b>")
-            self._set_action_buttons_enabled(False) # use helper method
-            return
-
-        # use getattr for safety, format details with html
-        details_html = f"""
-            <p><b>Name:</b> {getattr(info, 'name', 'N/A')}</p>
-            <p><b>Category:</b> {getattr(info, 'category', 'N/A')}&nbsp;&nbsp;&nbsp;
-               <b>Type:</b> {getattr(info, 'type', 'N/A')}&nbsp;&nbsp;&nbsp;
-               <b>Language:</b> {getattr(info, 'language', 'N/A')}</p>
-            <p><b>Size:</b> {getattr(info, 'size', 'N/A')}&nbsp;&nbsp;&nbsp;
-               <b>Uploaded By:</b> {getattr(info, 'uploader', 'N/A')}</p>
-            <p><b>Downloads:</b> {getattr(info, 'downloads', 'N/A')}&nbsp;&nbsp;&nbsp;
-               <b>Last Checked:</b> {getattr(info, 'last_checked', 'N/A')}&nbsp;&nbsp;&nbsp;
-               <b>Uploaded On:</b> {getattr(info, 'upload_date', 'N/A')}</p>
-            <p><b>Seeders:</b> {getattr(info, 'seeders', 'N/A')}&nbsp;&nbsp;&nbsp;
-               <b>Leechers:</b> {getattr(info, 'leechers', 'N/A')}</p>
-            <hr>
-            <p><b>Magnet Link:</b><br><code style='font-size: 9pt; word-wrap: break-word;'>{getattr(info, 'magnet_link', 'N/A')}</code></p>
-            <p><b>Infohash:</b> {getattr(info, 'infohash', 'N/A')}</p>
-            <p><b>Torrent Link:</b> {getattr(info, 'torrent_link', 'N/A')}</p>
         """
-        self.details_text.setHtml(details_html) # display the formatted html
+        Updates the details view with information from the details worker.
+        """
+        self.current_torrent_info = info
+        if info and info.magnet_link:
+            # Check if this torrent is already a favorite
+            is_favorite = any(fav['torrentId'] == info.torrent_id for fav in self.favorites if 'torrentId' in fav)
+            self.favorites_tab.add_favorite_button.setText("In Favorites" if is_favorite else "Add to Favorites")
+            self.favorites_tab.add_favorite_button.setEnabled(not is_favorite)
+            
+            # Update action buttons favorite button state
+            self.action_buttons.add_favorite_button.setText("In Favorites" if is_favorite else "Add to Favorites")
+            self.action_buttons.add_favorite_button.setEnabled(not is_favorite)
 
-        # enable action buttons only if a magnet link exists
-        has_magnet = bool(getattr(info, 'magnet_link', None))
-        self._set_action_buttons_enabled(has_magnet) # use helper method
-
+            self.set_action_buttons_enabled(True)
+            
+            # Format details with HTML for better presentation
+            description_html = info.description.replace('\\n', '<br>') if info.description else "No description available."
+            details_html = f"""
+                <body style='font-family: sans-serif; font-size: 10pt;'>
+                    <h3>{info.name}</h3>
+                    <p>
+                        <b>Category:</b> {info.category} &nbsp;&nbsp;&nbsp;
+                        <b>Type:</b> {info.type} &nbsp;&nbsp;&nbsp;
+                        <b>Language:</b> {info.language} &nbsp;&nbsp;&nbsp;
+                        <b>Size:</b> {info.size}
+                    </p>
+                    <p>
+                        <b>Seeders:</b> <span style='color: #4CAF50;'>{info.seeders}</span> &nbsp;&nbsp;&nbsp;
+                        <b>Leechers:</b> <span style='color: #F44336;'>{info.leechers}</span> &nbsp;&nbsp;&nbsp;
+                        <b>Downloads:</b> {info.downloads}
+                    </p>
+                    <p>
+                        <b>Uploaded by:</b> {info.uploader} &nbsp;&nbsp;&nbsp;
+                        <b>Date uploaded:</b> {info.date_uploaded} &nbsp;&nbsp;&nbsp;
+                        <b>Last checked:</b> {info.last_checked}
+                    </p>
+                    <h4>Description</h4>
+                    <div>{description_html}</div>
+                </body>
+            """
+            self.details_area.update_details(details_html)
+        else:
+            self.details_area.clear_details()
+            self.set_action_buttons_enabled(False)
+            self.favorites_tab.add_favorite_button.setEnabled(False)
 
     def copy_magnet(self):
-        if self.current_torrent_info:
-            magnet = getattr(self.current_torrent_info, 'magnet_link', None)
-            if magnet:
-                try:
-                    pyperclip.copy(magnet) # copy the magnet link to the clipboard
-                    self.update_status("Magnet link copied to clipboard!")
-                except pyperclip.PyperclipException:
-                     # specific error for clipboard libraries
-                     self.show_error("Clipboard Error", "Could not copy to clipboard. Install 'xclip' or 'xsel' on Linux, or check permissions.")
-                except Exception as e:
-                    # general error during copy
-                    self.show_error("Error", f"An unexpected error occurred during copy: {e}")
-            else:
-                self.show_error("Copy Error", "No magnet link available in details.")
+        """Copies the magnet link of the selected torrent to the clipboard."""
+        if self.current_torrent_info and self.current_torrent_info.magnet_link:
+            pyperclip.copy(self.current_torrent_info.magnet_link)
+            self.update_status("Magnet link copied to clipboard.")
         else:
-             self.show_error("Copy Error", "No torrent details loaded.")
-
+            self.show_error("Copy Error", "No magnet link available to copy.")
 
     def download_torrent_via_magnet(self):
-         if self.current_torrent_info:
-            magnet_link = getattr(self.current_torrent_info, 'magnet_link', None) # get the magnet link
-            if magnet_link:
-                try:
-                    # open the magnet link (this should launch the default torrent client)
-                    webbrowser.open(magnet_link)
-                    self.update_status("Opening magnet link in default torrent client...")
-                except Exception as e:
-                    self.show_error("Error Opening Magnet Link", f"Could not open magnet link:\n{e}")
-                    self.update_status("Failed to open magnet link.")
-            else:
-                self.show_error("Download Error", "No magnet link available in details.")
-         else:
-             self.show_error("Download Error", "No torrent details loaded.")
-
+        """Opens the magnet link in the default torrent client."""
+        if self.current_torrent_info and self.current_torrent_info.magnet_link:
+            webbrowser.open(self.current_torrent_info.magnet_link)
+            self.update_status("Opening magnet link in default torrent client...")
+        else:
+            self.show_error("Download Error", "No magnet link available.")
+            
     def update_status(self, message):
+        """Updates the status bar with a message."""
         self.status_bar.showMessage(message)
 
     def show_error(self, title, message):
+        """Shows an error message box."""
         QMessageBox.critical(self, title, message)
 
     def closeEvent(self, event):
-        """stops worker threads before closing the application."""
-        self._stop_worker(self.search_worker) # use helper method
-        self._stop_worker(self.details_worker) # use helper method
+        """Handle the window close event to stop running threads."""
+        self._stop_worker(self.search_worker)
+        self._stop_worker(self.details_worker)
         event.accept()
 
+    def load_search_history(self):
+        """Loads search history from a JSON file."""
+        history_path = os.path.join(os.path.dirname(__file__), 'search_history.json')
+        try:
+            with open(history_path, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
 
-# --- run application ---
-if __name__ == '__main__':
+    def save_search_history(self):
+        """Saves search history to a JSON file."""
+        history_path = os.path.join(os.path.dirname(__file__), 'search_history.json')
+        try:
+            with open(history_path, 'w') as f:
+                json.dump(self.search_history, f, indent=4)
+        except IOError:
+            self.show_error("History Error", "Could not save search history.")
+
+    def update_search_history(self, query):
+        """Updates the search history with a new query."""
+        if query not in self.search_history:
+            self.search_history.insert(0, query)
+            # a limit to the history size
+            if len(self.search_history) > 50:
+                self.search_history.pop()
+            
+            # Update completer model
+            completer_model = QStringListModel(self.search_history)
+            self.search_controls.search_completer.setModel(completer_model)
+
+    def clear_search_history(self):
+        """Clears the search history."""
+        self.search_history = []
+        completer_model = QStringListModel(self.search_history)
+        self.search_controls.search_completer.setModel(completer_model)
+        self.update_status("Search history cleared.")
+        self.save_search_history()
+
+    def load_favorites(self):
+        """Loads favorites from a JSON file."""
+        favorites_path = os.path.join(os.path.dirname(__file__), 'favorites.json')
+        try:
+            with open(favorites_path, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def save_favorites(self):
+        """Saves favorites to a JSON file."""
+        favorites_path = os.path.join(os.path.dirname(__file__), 'favorites.json')
+        try:
+            with open(favorites_path, 'w') as f:
+                json.dump(self.favorites, f, indent=4)
+        except IOError:
+            self.show_error("Favorites Error", "Could not save favorites.")
+
+    def update_favorites_table(self):
+        """Repopulates the favorites table from the favorites list."""
+        self.favorites_tab.populate_favorites(self.favorites)
+
+    def add_to_favorites(self):
+        """Adds the currently viewed torrent to the favorites list."""
+        if self.current_torrent_info:
+            is_favorite = any(fav['torrentId'] == self.current_torrent_info.torrent_id for fav in self.favorites if 'torrentId' in fav)
+            if not is_favorite:
+                # Add necessary info to favorites list
+                self.favorites.append({
+                    'torrentId': self.current_torrent_info.torrent_id,
+                    'name': self.current_torrent_info.name,
+                    'category': self.current_torrent_info.category,
+                    'size': self.current_torrent_info.size,
+                    'seeders': self.current_torrent_info.seeders,
+                    'leechers': self.current_torrent_info.leechers,                    'domain': self.search_controls.get_search_parameters()['domain'] # save domain used
+                })
+                self.save_favorites()
+                self.update_favorites_table()
+                self.update_status(f"Added '{self.current_torrent_info.name}' to favorites.")
+                
+                # Update button state in both tabs and action buttons
+                self.favorites_tab.add_favorite_button.setText("In Favorites")
+                self.favorites_tab.add_favorite_button.setEnabled(False)
+                self.action_buttons.add_favorite_button.setText("In Favorites")
+                self.action_buttons.add_favorite_button.setEnabled(False)
+            else:
+                self.update_status("This torrent is already in your favorites.")
+
+    def remove_from_favorites(self):
+        """Removes the selected torrent from the favorites list."""
+        selected_items = self.favorites_tab.favorites_table.selectedItems()
+        if not selected_items:
+            self.show_error("Remove Error", "Please select a favorite to remove.")
+            return
+
+        selected_row = selected_items[0].row()
+        torrent_id_item = self.favorites_tab.favorites_table.item(selected_row, 5)
+
+        if not torrent_id_item:
+            self.show_error("Remove Error", "Could not identify selected favorite.")
+            return
+            
+        torrent_id_to_remove = torrent_id_item.text()
+
+        # Find and remove the favorite from the list
+        self.favorites = [fav for fav in self.favorites if fav.get('torrentId') != torrent_id_to_remove]
+        self.save_favorites()
+        self.update_favorites_table()
+        self.update_status("Favorite removed.")
+        self.favorites_tab.remove_favorite_button.setEnabled(False)
+
+    def on_tab_changed(self, index):
+        """Handle tab changes to update UI state, e.g., enabling/disabling buttons."""
+        # Prevent crash on startup if signal fires before UI is fully initialized
+        if not hasattr(self, 'details_area'):
+            return
+
+        is_favorites_tab = self.tab_widget.tabText(index) == "Favorites"
+        self.favorites_tab.remove_favorite_button.setEnabled(is_favorites_tab and bool(self.favorites_tab.favorites_table.selectedItems()))
+        
+        # When switching away from favorites, clear details if they are from a favorite
+        # A simple way is to check the selection on the other table
+        if not is_favorites_tab:
+            if not self.search_tab.results_table.selectedItems():
+                self.details_area.clear_details()
+                self.favorites_tab.add_favorite_button.setEnabled(False)
+                self.set_action_buttons_enabled(False)
+        else: # on favs tab
+             if not self.favorites_tab.favorites_table.selectedItems():
+                self.details_area.clear_details()
+                self.favorites_tab.add_favorite_button.setEnabled(False)
+                self.set_action_buttons_enabled(False)
+
+
+    def start_display_favorite_details(self):
+        """Fetches and displays details for a selected favorite torrent."""
+        selected_items = self.favorites_tab.favorites_table.selectedItems()
+        if not selected_items:
+            return
+
+        selected_row = selected_items[0].row()
+        torrent_id_item = self.favorites_tab.favorites_table.item(selected_row, 5)
+        
+        if not torrent_id_item:
+            return
+
+        torrent_id = torrent_id_item.text()
+        domain = ""
+        # Find the domain used for this favorite, if stored
+        for fav in self.favorites:
+            if fav.get('torrentId') == torrent_id:
+                domain = fav.get('domain', "")
+                break
+        
+        # When a favorite is selected, enable the remove button
+        self.favorites_tab.remove_favorite_button.setEnabled(True)
+
+        # Use the details worker to fetch fresh data
+        self._stop_worker(self.details_worker)
+        self.details_worker = DetailsWorker(torrent_id, domain)
+        self.details_worker.signals.details_finished.connect(self.update_details_display)
+        self.details_worker.signals.error.connect(self.show_error)
+        self.details_worker.signals.status_update.connect(self.update_status)
+        self.details_worker.start()
+
+# --- application entry point ---
+def main():
     app = QApplication(sys.argv)
-    # stylesheet is now loaded within torrentapp._load_stylesheet()
     ex = TorrentApp()
+    ex.show()
     sys.exit(app.exec())
+
+if __name__ == '__main__':
+    main()
