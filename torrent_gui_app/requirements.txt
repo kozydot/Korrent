@@ -1,0 +1,6 @@
+PyQt6
+py1337x
+cloudscraper
+beautifulsoup4
+pyperclip
+qtawesome 
