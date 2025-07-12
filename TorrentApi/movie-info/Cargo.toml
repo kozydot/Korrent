@@ -1,0 +1,23 @@
+[package]
+name = "movie-info"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-graphql = { workspace = true, optional = true }
+chrono = { workspace = true }
+getset = { workspace = true }
+lazy_static = { workspace = true }
+log = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+surf = { workspace = true }
+utils = { path = "../utils", version = "0.1.0" }
+
+[features]
+graphql = ["dep:async-graphql"]
+
+[dev-dependencies]
+lazy_static = { workspace = true }
+tokio = { workspace = true }

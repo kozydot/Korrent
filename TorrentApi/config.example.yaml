@@ -1,0 +1,7 @@
+qbittorrent:
+    username: admin
+    password: adminadmin
+    url: http://localhost:8080
+movies_path: /movies
+remote_download_path: /downloads
+local_download_path: /downloads

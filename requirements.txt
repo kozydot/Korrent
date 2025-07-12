@@ -1,2 +1,2 @@
-1337x
 PyQt6
+requests

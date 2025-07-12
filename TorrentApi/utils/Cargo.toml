@@ -1,0 +1,11 @@
+[package]
+name = "utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+url = "2.5.4"
+surf = { workspace = true }
+log = { workspace = true }
+multimap = "0.10.1"
+getset = { workspace = true }

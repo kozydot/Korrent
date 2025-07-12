@@ -62,4 +62,39 @@ venv.bak/
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Application specific
+torrent_gui_app/search_history.json
+torrent_gui_app/build/
+torrent_gui_app/dist/
+torrent_gui_app/*.zip
+torrent_gui_app/icon.ico
+
+# Rust (for TorrentApi)
+TorrentApi/target/
+TorrentApi/Cargo.lock
+TorrentApi/**/*.rs.bk
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
+# Configuration files with sensitive data
+config.local.yaml
+.env.local
+
+# Documentation (except README)
+*.md
+*.MD
+!README.md
+!README.MD

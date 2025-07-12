@@ -1,0 +1,18 @@
+[package]
+name = "qbittorrent-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+utils = { path = "../utils", version = "0.1" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+surf = { workspace = true }
+async-graphql = { workspace = true, optional = true }
+chrono = { workspace = true }
+log = { workspace = true }
+getset = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+graphql = ["dep:async-graphql"]

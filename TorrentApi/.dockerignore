@@ -1,0 +1,10 @@
+**
+
+!/.cargo
+!/api-server
+!/torrent-search-client
+!/qbittorrent-api
+!/movie-info
+!/utils
+!/Cargo.lock
+!/Cargo.toml
