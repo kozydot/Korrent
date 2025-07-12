@@ -146,37 +146,44 @@ def create_distribution_readme(dist_dir):
     """Create a README file for the distribution."""
     readme_content = """# Korrent - Torrent Search Application
 
-## What is this?
-Korrent is a standalone torrent search application that helps you find and download torrents from various sources.
+Korrent is a standalone torrent search application that searches multiple torrent providers through a unified interface.
 
-## How to use:
-1. Double-click Korrent.exe to start the application
-2. The torrent search server will start automatically in the background
-3. Enter your search terms and click "Search"
-4. Select torrents from the results to view details
-5. Copy magnet links or open them directly in your torrent client
+## Quick Start
 
-## Features:
-✅ Automatic server startup
-✅ Search multiple torrent sources
-✅ Modern, user-friendly interface
-✅ Favorites management
-✅ Magnet link handling
-✅ No installation required
+1. Run Korrent.exe
+2. Wait for automatic server startup (10-15 seconds)
+3. Enter search terms and click Search
+4. Copy magnet links or open directly in your torrent client
 
-## Troubleshooting:
-• If Windows blocks the app: Right-click → Properties → Unblock → OK
-• If antivirus flags it: Add to exclusions (it's a false positive)
-• If server fails to start: Try running as administrator
-• For best results: Ensure your torrent client (like qBittorrent) is installed
+## Features
 
-## Legal Notice:
-This application is for searching publicly available torrent files. Users are responsible for ensuring they have legal rights to download any content. Respect copyright laws in your jurisdiction.
+- Automatic server startup
+- Multi-provider search (ThePirateBay, YTS, BitSearch)
+- Modern interface with favorites management
+- Magnet link handling
+- No installation required
 
-## Support:
-For issues or questions, please check the project repository or contact the developer.
+## Troubleshooting
 
-Enjoy safe and legal torrenting! 🌊
+- If Windows blocks the app: Right-click > Properties > Unblock > OK
+- If antivirus flags it: Add to exclusions (false positive)
+- If server fails to start: Try running as administrator
+- Ensure your torrent client is installed for magnet link handling
+
+## Credits
+
+This application uses TorrentApi by Netfloex for torrent search functionality.
+TorrentApi: https://github.com/Netfloex/TorrentApi
+
+## Legal Notice
+
+This software searches publicly available torrent files. Users must ensure legal rights to download content and respect copyright laws in their jurisdiction.
+
+## Requirements
+
+- Windows 10/11 (64-bit)
+- Internet connection
+- Torrent client (recommended: qBittorrent)
 """
     
     readme_path = dist_dir / "README.txt"
