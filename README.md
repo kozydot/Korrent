@@ -1,5 +1,3 @@
-# Korrent
-
 <div align="center">
   <img src="korrent_logo.png" alt="Korrent Logo" width="300">
 </div>
