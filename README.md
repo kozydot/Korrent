@@ -1,5 +1,9 @@
 # Korrent
 
+<div align="center">
+  <img src="korrent_logo.png" alt="Korrent Logo" width="300">
+</div>
+
 A desktop torrent search application built with Python and PyQt6, featuring automatic server management and multi-provider search capabilities.
 
 ## Features
