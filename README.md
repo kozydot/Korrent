@@ -136,6 +136,4 @@ This application uses **TorrentApi** by Netfloex for torrent search functionalit
 
 ## License
 
-This project is open source. Please check individual component licenses:
-- Korrent GUI: MIT License
-- TorrentApi: Check TorrentApi repository for license details
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
