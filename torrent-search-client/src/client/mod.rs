@@ -14,9 +14,25 @@ pub mod bitsearch;
 pub mod piratebay;
 pub mod yts;
 
+#[derive(Debug)]
 pub struct ProviderResponse {
     pub provider: Provider,
     pub torrents: Result<Vec<Torrent>, Error>,
+}
+
+impl Clone for ProviderResponse {
+    fn clone(&self) -> Self {
+        Self {
+            provider: self.provider,
+            torrents: match &self.torrents {
+                Ok(torrents) => Ok(torrents.clone()),
+                Err(_) => Err(Error::new(
+                    crate::error::ErrorKind::ScrapingError,
+                    "Cloned error result"
+                )),
+            },
+        }
+    }
 }
 
 #[async_trait]
@@ -54,7 +70,7 @@ pub trait TorrentProvider {
 }
 
 use strum_macros::EnumIter;
-#[derive(EnumIter, Serialize, Debug, Clone, PartialEq, Eq, Hash, Copy)]
+#[derive(EnumIter, Serialize, Debug, Clone, PartialEq, Eq, Hash, Copy, PartialOrd, Ord)]
 #[cfg_attr(feature = "graphql", derive(async_graphql::Enum))]
 pub enum Provider {
     #[cfg_attr(feature = "graphql", graphql(name = "PIRATEBAY"))]

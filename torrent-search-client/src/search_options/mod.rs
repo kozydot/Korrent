@@ -8,7 +8,7 @@ use self::category::Category;
 use self::{order::Order, sort_column::SortColumn};
 use getset::Getters;
 
-#[derive(Getters)]
+#[derive(Getters, Clone, Debug)]
 #[get = "pub"]
 pub struct SearchOptions {
     query: String,

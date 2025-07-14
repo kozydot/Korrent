@@ -16,7 +16,6 @@ use simplelog::{
 };
 use std::sync::Arc;
 use std::{process, vec};
-use torrent_search_client::TorrentClient;
 
 #[rocket::launch]
 async fn rocket() -> _ {
@@ -43,7 +42,6 @@ async fn rocket() -> _ {
     });
 
     let context: ContextPointer = Arc::new(Context::new(
-        TorrentClient::new(),
         QbittorrentClient::new(
             config.qbittorrent().username(),
             config.qbittorrent().password(),

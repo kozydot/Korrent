@@ -4,7 +4,7 @@ use crate::api::{
         track_movie::TrackMovieMutation,
     },
     query::{
-        active_torrents::ActiveTorrentsQuery, movie_info::MovieInfoQuery,
+        active_torrents::ActiveTorrentsQuery, cache_stats::CacheStatsQuery, movie_info::MovieInfoQuery,
         popular_movies::PopularMoviesQuery, search_filters::SearchFiltersQuery,
         search_movies::SearchMoviesQuery, search_torrents::SearchTorrentsQuery,
         tmdb_bulk::TmdbBulkQuery, trending_movies::TrendingMoviesQuery,
@@ -22,6 +22,7 @@ pub type SchemaType = Schema<Query, Mutation, EmptySubscription>;
 #[derive(Default, MergedObject)]
 pub struct Query(
     ActiveTorrentsQuery,
+    CacheStatsQuery,
     MovieInfoQuery,
     PopularMoviesQuery,
     SearchFiltersQuery,

@@ -1,7 +1,7 @@
 use crate::{Order, SortColumn};
 use getset::Getters;
 
-#[derive(Getters)]
+#[derive(Getters, Clone, Debug)]
 #[get = "pub"]
 pub struct MovieOptions {
     imdb: String,
