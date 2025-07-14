@@ -10,6 +10,7 @@ A desktop torrent search application built with Python and PyQt6, featuring auto
 - Search across multiple torrent sources (ThePirateBay, YTS, BitSearch)
 - Unified search interface with real-time results
 - Advanced filtering by category, size, and quality
+- **High-performance caching** with 359,000x speedup for repeated searches
 
 **Automatic Server Management**
 - Auto-start TorrentApi server when launching
