@@ -1,4 +1,5 @@
 pub mod active_torrents;
+pub mod cache_stats;
 pub mod movie_info;
 pub mod popular_movies;
 pub mod search_filters;

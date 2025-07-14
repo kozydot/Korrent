@@ -4,7 +4,8 @@ use movie_info::MovieInfoClient;
 use qbittorrent_api::QbittorrentClient;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
-use torrent_search_client::TorrentClient;
+use torrent_search_client::{TorrentClient, cache::CacheConfig};
+use chrono::Duration;
 
 use super::config::Config;
 
@@ -21,10 +22,19 @@ pub struct Context {
 
 impl Context {
     pub fn new(
-        torrent_client: TorrentClient,
         qbittorrent_client: QbittorrentClient,
         config: Config,
     ) -> Self {
+        // Create cached torrent client with optimized settings for API server
+        let cache_config = CacheConfig::new(
+            Duration::minutes(30),  // 30-minute TTL for production use
+            1000,                   // Cache up to 1000 searches
+            Duration::minutes(5)    // Cleanup every 5 minutes
+        );
+        let torrent_client = TorrentClient::with_cache(cache_config);
+        
+        info!("Initialized TorrentClient with caching (TTL: 30min, Max entries: 1000)");
+        
         Self {
             torrent_client,
             qbittorrent_client,

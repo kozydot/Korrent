@@ -25,9 +25,16 @@ log = { workspace = true }
 strum_macros = { workspace = true }
 strum = { workspace = true }
 getset = { workspace = true }
+tokio = { workspace = true }
+dashmap = "6.1.0"
+sha2 = "0.10.8"
+hex = "0.4.3"
+thiserror = "2.0.8"
 
 [features]
 graphql = ["dep:async-graphql"]
 
 [dev-dependencies]
 tokio = { workspace = true }
+env_logger = "0.11.5"
+futures = "0.3.31"
